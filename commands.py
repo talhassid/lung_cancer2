@@ -5,6 +5,7 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 import tensorflow as tf
+import scipy.ndimage
 
 """
     DEFINES
@@ -13,8 +14,10 @@ IMG_PX_SIZE = 150
 HM_SLICES = 20
 IMG_SIZE_PX = 50
 SLICE_COUNT = 20
+MIN_BOUND = -1000.0
+MAX_BOUND = 400
 """
-    functions
+   math functions
 """
 #n-sized chunks from list l
 def chunks( l,n ):
@@ -27,51 +30,18 @@ def chunks( l,n ):
 def mean(l):
     return sum(l) / len(l)
 
-def process_data(data_dir: str,patient,labels_df,img_px_size=50, hm_slices=20, visualize=False):
+"""
+   network functions
+"""
 
-    label = labels_df.get_value(patient, 'cancer')
-    path = data_dir + patient
-    slices = [dicom.read_file(path + '/' + s) for s in os.listdir(path)]
-    #We're sorting by the actual image position in the scan
-    slices.sort(key = lambda x: int(x.ImagePositionPatient[2]))
 
-    new_slices = []
-    #we're resizing our images from 512x512 to 150x150
-    slices = [cv2.resize(np.array(each_slice.pixel_array),(img_px_size,img_px_size)) for each_slice in slices]
 
-    chunk_sizes = math.floor(len(slices) / HM_SLICES)
-    for slice_chunk in chunks(slices, chunk_sizes):
-        slice_chunk = list(map(mean, zip(*slice_chunk)))
-        new_slices.append(slice_chunk)
 
-    if len(new_slices) == hm_slices-1:
-        new_slices.append(new_slices[-1])
-
-    if len(new_slices) == hm_slices-2:
-        new_slices.append(new_slices[-1])
-        new_slices.append(new_slices[-1])
-
-    if len(new_slices) == hm_slices+2:
-        new_val = list(map(mean, zip(*[new_slices[hm_slices-1],new_slices[hm_slices],])))
-        del new_slices[hm_slices]
-        new_slices[hm_slices-1] = new_val
-
-    if len(new_slices) == hm_slices+1:
-        new_val = list(map(mean, zip(*[new_slices[hm_slices-1],new_slices[hm_slices],])))
-        del new_slices[hm_slices]
-        new_slices[hm_slices-1] = new_val
-
-    if visualize:
-        fig = plt.figure()
-        for num,each_slice in enumerate(new_slices):
-            y = fig.add_subplot(4,5,num+1)
-            y.imshow(each_slice, cmap='gray')
-        plt.show()
-
-    if label == 1: label=np.array([0,1])
-    elif label == 0: label=np.array([1,0])
-
-    return np.array(new_slices),label
+def process_data(paitent_path) : #cat
+    slices = load_scan(paitent_path)
+    image_3D_arr = get_pixels_hu(slices) #see what the output it. np.array of slices
+    image_3D_arr,new_spacing = resample(image_3D_arr,slices, [1,1,1])
+    return image_3D_arr,new_spacing
 
 def conv3d(x, W):
     """
@@ -149,8 +119,9 @@ def train_neural_network(y,x,n_classes,keep_rate,train_data,validation_data):
                     epoch_loss += c
                     successful_runs += 1
                 except Exception as e:
+                    print(str(e))
                     pass
-                    #print(str(e))
+
 
             print('Epoch', epoch+1, 'completed out of',hm_epochs,'loss:',epoch_loss)
 
@@ -163,3 +134,144 @@ def train_neural_network(y,x,n_classes,keep_rate,train_data,validation_data):
         print('Accuracy:',accuracy.eval({x:[i[0] for i in validation_data], y:[i[1] for i in validation_data]}))
 
         print('fitment percent:',successful_runs/total_runs)
+
+
+"""
+   preprocessing data functions
+"""
+
+
+# Load the scans in given folder path and returns a list of all patient's slices, plus resizing it.
+def resizing_and_loading(path_patient ,img_px_size=50, hm_slices=20): #blond
+
+    slices = [dicom.read_file(path_patient + '/' + s) for s in os.listdir(path_patient)]
+    #We're sorting by the actual image position in the scan
+    slices.sort(key = lambda x: float(x.ImagePositionPatient[2]))
+    try:
+        slice_thickness = np.abs(slices[0].ImagePositionPatient[2] - slices[1].ImagePositionPatient[2])
+    except:
+        slice_thickness = np.abs(slices[0].SliceLocation - slices[1].SliceLocation)
+
+    for s in slices:
+        s.SliceThickness = slice_thickness
+
+    for each_slice in slices:
+        each_slice.pixel_array = cv2.resize(np.array(each_slice.pixel_array),(img_px_size,img_px_size))
+
+    new_slices = []
+    chunk_sizes = math.floor(len(slices) / HM_SLICES)
+    for slice_chunk in chunks(slices, chunk_sizes):
+        slice_chunk = list(map(mean, zip(*slice_chunk)))
+        new_slices.append(slice_chunk)
+
+    if len(new_slices) == hm_slices-1:
+        new_slices.append(new_slices[-1])
+
+    if len(new_slices) == hm_slices-2:
+        new_slices.append(new_slices[-1])
+        new_slices.append(new_slices[-1])
+
+    if len(new_slices) == hm_slices+2:
+        new_val = list(map(mean, zip(*[new_slices[hm_slices-1],new_slices[hm_slices],])))
+        del new_slices[hm_slices]
+        new_slices[hm_slices-1] = new_val
+
+    if len(new_slices) == hm_slices+1:
+        new_val = list(map(mean, zip(*[new_slices[hm_slices-1],new_slices[hm_slices],])))
+        del new_slices[hm_slices]
+        new_slices[hm_slices-1] = new_val
+
+    for each_slice in slices:
+        each_slice.pixel_array = new_slices[each_slice]
+
+
+    #we're resizing our images from 512x512 to 150x150
+    # slices = [cv2.resize(np.array(each_slice.pixel_array),(img_px_size,img_px_size)) for each_slice in slices]
+    # chunk_sizes = math.floor(len(slices) / HM_SLICES)
+    # for slice_chunk in chunks(slices, chunk_sizes):
+    #     slice_chunk = list(map(mean, zip(*slice_chunk)))
+    #     new_slices.append(slice_chunk)
+    #
+    # if len(new_slices) == hm_slices-1:
+    #     new_slices.append(new_slices[-1])
+    #
+    # if len(new_slices) == hm_slices-2:
+    #     new_slices.append(new_slices[-1])
+    #     new_slices.append(new_slices[-1])
+    #
+    # if len(new_slices) == hm_slices+2:
+    #     new_val = list(map(mean, zip(*[new_slices[hm_slices-1],new_slices[hm_slices],])))
+    #     del new_slices[hm_slices]
+    #     new_slices[hm_slices-1] = new_val
+    #
+    # if len(new_slices) == hm_slices+1:
+    #     new_val = list(map(mean, zip(*[new_slices[hm_slices-1],new_slices[hm_slices],])))
+    #     del new_slices[hm_slices]
+    #     new_slices[hm_slices-1] = new_val
+    # return np.array(new_slices)
+
+    return slices
+
+def load_scan(path):
+
+    slices = [dicom.read_file(path + '/' + s) for s in os.listdir(path)]
+    slices.sort(key = lambda x: float(x.ImagePositionPatient[2]))
+    try:
+        slice_thickness = np.abs(slices[0].ImagePositionPatient[2] - slices[1].ImagePositionPatient[2])
+    except:
+        slice_thickness = np.abs(slices[0].SliceLocation - slices[1].SliceLocation)
+
+    for s in slices:
+        s.SliceThickness = slice_thickness
+
+
+    return slices
+
+#Changes the units of the pixel's to HU.
+def get_pixels_hu(slices):
+    image = np.stack([s.pixel_array for s in slices])
+    # Convert to int16 (from sometimes int16),
+    # should be possible as values should always be low enough (<32k)
+    image = image.astype(np.int16)
+
+    # Set outside-of-scan pixels to 0
+    # The intercept is usually -1024, so air is approximately 0
+    image[image == -2000] = 0
+
+    # Convert to Hounsfield units (HU)
+    for slice_number in range(len(slices)):
+
+        intercept = slices[slice_number].RescaleIntercept
+        slope = slices[slice_number].RescaleSlope
+
+        if slope != 1:
+            image[slice_number] = slope * image[slice_number].astype(np.float64)
+            image[slice_number] = image[slice_number].astype(np.int16)
+
+        image[slice_number] += np.int16(intercept)
+        # image[slice_number] = normalize(image[slice_number])
+
+    return np.array(image, dtype=np.int16)
+
+#defines a new unified spacing between pixels
+def resample(image, scan, new_spacing=[1,1,1]):
+    # Determine current pixel spacing
+    spacing = np.array([scan[0].SliceThickness] + scan[0].PixelSpacing, dtype=np.float32)
+
+    resize_factor = spacing / new_spacing
+    new_real_shape = image.shape * resize_factor
+    new_shape = np.round(new_real_shape)
+    real_resize_factor = new_shape / image.shape
+    new_spacing = spacing / real_resize_factor
+
+    image = scipy.ndimage.interpolation.zoom(image, real_resize_factor, mode='nearest')
+
+    return image, new_spacing
+
+#Normalize the images' pixles values
+def normalize(image):
+    image = (image - MIN_BOUND)/(MAX_BOUND - MIN_BOUND)
+    image[image>1]=1
+    image[image<0]=0
+    return image
+
