@@ -68,8 +68,8 @@ def process_data(data_dir: str,patient,labels_df,img_px_size=50, hm_slices=20, v
             y.imshow(each_slice, cmap='gray')
         plt.show()
 
-    if label == 1: label=np.array([0,1])
-    elif label == 0: label=np.array([1,0])
+    if label == 1: label=np.array([0,1]) #cancer
+    elif label == 0: label=np.array([1,0]) #no cancer
 
     return np.array(new_slices),label
 
@@ -121,13 +121,20 @@ def convolutional_neural_network(x,n_classes,keep_rate):
 
     return output
 
-def train_neural_network(y,x,n_classes,keep_rate,train_data,validation_data):
+def train_neural_network(y,x,n_classes,keep_rate,train_data,validation_data, numofpatients):
+
+
+    #currently batch size isn't defined
+
     prediction = convolutional_neural_network(x,n_classes,keep_rate)
     # reduce_mean: Computes the mean of elements across dimensions of a tensor.
     # softmax_cross_entropy_with_logits: Computes softmax cross entropy between logits and labels.
     cost = tf.reduce_mean( tf.nn.softmax_cross_entropy_with_logits(logits=prediction, labels=y) )
+    #cost = LogLoss(20, prediction._consumers, y._consumers)
     # minimize : Add operations to minimize loss by updating var_list.
     optimizer = tf.train.AdamOptimizer(learning_rate=1e-3).minimize(cost)
+
+    #In one epoch the data feeds the net and back-proporgates.
 
     hm_epochs = 10
     # session :A class for running TensorFlow operations.
@@ -146,20 +153,51 @@ def train_neural_network(y,x,n_classes,keep_rate,train_data,validation_data):
                     X = data[0]
                     Y = data[1]
                     _, c = sess.run([optimizer, cost], feed_dict={x: X, y: Y})
-                    epoch_loss += c
+                    epoch_loss += np.log(c)
                     successful_runs += 1
+
                 except Exception as e:
                     pass
-                    #print(str(e))
+                    print(str(e))
 
             print('Epoch', epoch+1, 'completed out of',hm_epochs,'loss:',epoch_loss)
 
             correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
-            accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
 
-            print('Accuracy:',accuracy.eval({x:[i[0] for i in validation_data], y:[i[1] for i in validation_data]}))
+            accuracy_test = tf.reduce_mean(tf.cast(correct, tf.float32))
+            print('Accuracy:',tf.cast(accuracy_test,tf.float32))
 
-        print('Done. Finishing accuracy:')
-        print('Accuracy:',accuracy.eval({x:[i[0] for i in validation_data], y:[i[1] for i in validation_data]}))
 
-        print('fitment percent:',successful_runs/total_runs)
+ #           accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
+    #        res_model=tf.argmax(prediction, 1)   #added logloss part
+    #       res, accuracy_test = sess.run(res_model, feed_dict={x: validation_data}) #added logloss part
+
+      #      classification = []
+      #      validationLength = 2
+          #  for i in validation_data:
+           #     classification.append(i[1][1])
+#            print( LogLoss(validationLength, res,classification)) #added logloss part
+
+  #          print('Accuracy:',accuracy.eval({x:[i[0] for i in validation_data], y:[i[1] for i in validation_data]}))
+
+
+
+    print('Done. Finishing accuracy:')
+    print('fitment percent:',successful_runs/total_runs)
+
+
+def LogLoss(num_of_patients, predictions:list, classification:list):
+    result = 0
+    temp_result=0
+
+
+    for i in range(num_of_patients):
+        temp_result=(np.log(predictions[i]))*classification[i]+(1-classification[i]*np.log(1-predictions[i]))
+        result=result+temp_result
+
+    result = -1*result/num_of_patients
+    return result
+
+
+
+
