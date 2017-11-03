@@ -1,14 +1,11 @@
 from __future__ import division, print_function, absolute_import
+
 import os
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 import tensorflow as tf
 from tensorflow.examples.tutorials.mnist import input_data
-
-
-from commands import process_data
-from commands import train_neural_network
-
 
 """
     DEFINES
