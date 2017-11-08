@@ -61,6 +61,21 @@ def process_data(patient,labels_df,data_dir,img_px_size=50,hm_slices=20):
 
     return np.array(new_slices), label
 
+def load_process_data(patients,labels_df,data_dir):
+    much_data = []
+    #just to know where we are, each 100 patient we will print out
+    for num, patient in enumerate(patients):
+        if num%10==0:
+            print(num)
+        try:
+            img_data,label = process_data(patient,labels_df,data_dir,img_px_size=IMG_PX_SIZE, hm_slices=SLICE_COUNT)
+            #print(img_data.shape,label)
+            much_data.append([img_data,label])
+        except KeyError as e:
+            print('This is unlabeled data!')
+
+    np.save('muchdata-{}-{}-{}.npy'.format(IMG_PX_SIZE,IMG_PX_SIZE,SLICE_COUNT), much_data)
+
 ###############################################building the net######################################################
 def conv3d(x, W):
     return tf.nn.conv3d(x, W, strides=[1,1,1,1,1], padding='SAME')
@@ -102,45 +117,77 @@ def convolutional_neural_network(x, keep_rate=0.8, n_classes=2):
     return output
 
 ###############################################train the net##########################################################
-def train_neural_network(x, y, epochs_counts=30, validation_counts=100):
+
+
+def train_neural_network(epochs_count=30, validation_count=100):
+# loading data
     much_data = np.load('muchdata-50-50-20.npy')
-    train_data = much_data[:-validation_counts] #2 for sampleimages and 100 for stage1
-    validation_data = much_data[-validation_counts:]
-
-    prediction = convolutional_neural_network(x)
-    cost = tf.reduce_mean( tf.nn.softmax_cross_entropy_with_logits(logits=prediction, labels=y) )
+    train_data = much_data[:-validation_count] #2 for sampleimages and 100 for stage1
+    validation_data = much_data[-validation_count:]
+# the network
+    x = tf.placeholder('float') # A way to feed data into the graphs
+    y = tf.placeholder('float')
+    output_layer = convolutional_neural_network(x)
+    cost = tf.reduce_mean( tf.nn.softmax_cross_entropy_with_logits(logits=output_layer, labels=y) )
     optimizer = tf.train.AdamOptimizer(learning_rate=1e-3).minimize(cost)
+# training
+    hm_epochs = epochs_count
 
-    hm_epochs = epochs_counts
-    with tf.Session() as sess:
+    # Add ops to save and restore all the variables.
+    saver = tf.train.Saver()
+
+    with tf.Session(graph=tf.Graph()) as sess:
         sess.run(tf.global_variables_initializer())
-
-        successful_runs = 0
-        total_runs = 0
-
         for epoch in range(hm_epochs):
             epoch_loss = 0
             for data in train_data:
-                total_runs += 1
                 try:
                     X = data[0]
                     Y = data[1]
-                    _, c = sess.run([optimizer, cost], feed_dict={x: X, y: Y})
+                    _, c= sess.run([optimizer, cost], feed_dict={x: X, y: Y})
                     epoch_loss += c
-                    successful_runs += 1
                 except Exception as e:
                     pass
-
-            print('Epoch', epoch+1, 'completed out of',hm_epochs,'loss:',epoch_loss)
-
-            correct = tf.equal(tf.argmax(prediction, 1), tf.argmax(y, 1))
+            print ("Training complete!")
+            print('Epoch', epoch+1, 'completed out of',hm_epochs,', loss:',epoch_loss)
+            # find predictions on val set
+            correct = tf.equal(tf.argmax(output_layer, 1), tf.argmax(y, 1))
             accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
-
             print('Accuracy:',accuracy.eval({x:[i[0] for i in validation_data], y:[i[1] for i in validation_data]}))
 
         print('Done. Finishing accuracy:')
-        print('Accuracy:',accuracy.eval({x:[i[0] for i in validation_data], y:[i[1] for i in validation_data]}))
+        print('Validation Accuracy:',accuracy.eval({x:[i[0] for i in validation_data], y:[i[1] for i in validation_data]}))
 
-        print('fitment percent:',successful_runs/total_runs)
-        return x
+        # Save the variables to disk.
+        save_path = saver.save(sess, "/home/talhassid/PycharmProjects/lung_cancer/sentex/model.ckpt")
+        print("Model saved in file: %s" % save_path)
+
+
+        predict = tf.argmax(output_layer, 1)
+        pred = predict.eval({x:[i[0] for i in much_data[-2:]], y:[i[1] for i in  much_data[-2:]]})
+        print (pred)
+        return predict
+
+def test(predict):
+    tf.reset_default_graph()
+
+    # Create some variables.
+    v1 = tf.placeholder('float')
+
+    much_data = np.load('muchdata-50-50-20.npy')
+    x = tf.placeholder('float') # A way to feed data into the graphs
+    y = tf.placeholder('float')
+
+    # Add ops to save and restore all the variables.
+    saver = tf.train.Saver()
+
+    # Later, launch the model, use the saver to restore variables from disk, and
+    # do some work with the model.
+    with tf.Session() as sess:
+      # Restore variables from disk.
+      saver.restore(sess, "/tmp/model.ckpt")
+      print("Model restored.")
+      # Check the values of the variables
+      print("v1 : %s" % v1.eval({x:[i[0] for i in much_data[-2:]], y:[i[1] for i in  much_data[-2:]]}))
+
 
