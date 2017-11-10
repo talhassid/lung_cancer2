@@ -112,7 +112,7 @@ def convolutional_neural_network(x, keep_rate=0.8, n_classes=2):
     fc = tf.nn.relu(tf.matmul(fc, weights['W_fc'])+biases['b_fc'])
     fc = tf.nn.dropout(fc, keep_rate)
 
-    output = tf.matmul(fc, weights['out'])+biases['out']
+    output = tf.matmul(fc, weights['out'],name="op_to_restore")+biases['out'] #add name="op_to_restore"
 
     return output
 
@@ -136,7 +136,7 @@ def train_neural_network(epochs_count=30, validation_count=100):
     # Add ops to save and restore all the variables.
     saver = tf.train.Saver()
 
-    with tf.Session(graph=tf.Graph()) as sess:
+    with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         for epoch in range(hm_epochs):
             epoch_loss = 0
@@ -162,32 +162,31 @@ def train_neural_network(epochs_count=30, validation_count=100):
         save_path = saver.save(sess, "/home/talhassid/PycharmProjects/lung_cancer/sentex/model.ckpt")
         print("Model saved in file: %s" % save_path)
 
+        test_data = much_data[-1]
+        X = test_data[0]
+        Y = test_data[1]
+        feed_dict = {x:X,y:Y}
+        print ("prediction[no_cancer , cancer]:", sess.run(output_layer,feed_dict=feed_dict))
+    return x,y
 
-        predict = tf.argmax(output_layer, 1)
-        pred = predict.eval({x:[i[0] for i in much_data[-2:]], y:[i[1] for i in  much_data[-2:]]})
-        print (pred)
-        return predict
+def test(x,y):
+    sess=tf.Session()
+    #First let's load meta graph and restore weights
+    saver = tf.train.import_meta_graph('/home/talhassid/PycharmProjects/lung_cancer/sentex/model.ckpt.meta')
+    saver.restore(sess,tf.train.latest_checkpoint('./'))
 
-def test(predict):
-    tf.reset_default_graph()
+    graph = tf.get_default_graph()
 
-    # Create some variables.
-    v1 = tf.placeholder('float')
+    #Now, access the op that you want to run.
+    op_to_restore = graph.get_tensor_by_name("op_to_restore:0")
 
+    # Now, let's access and create placeholders variables and
+    # create feed-dict to feed new data
     much_data = np.load('muchdata-50-50-20.npy')
-    x = tf.placeholder('float') # A way to feed data into the graphs
-    y = tf.placeholder('float')
-
-    # Add ops to save and restore all the variables.
-    saver = tf.train.Saver()
-
-    # Later, launch the model, use the saver to restore variables from disk, and
-    # do some work with the model.
-    with tf.Session() as sess:
-      # Restore variables from disk.
-      saver.restore(sess, "/tmp/model.ckpt")
-      print("Model restored.")
-      # Check the values of the variables
-      print("v1 : %s" % v1.eval({x:[i[0] for i in much_data[-2:]], y:[i[1] for i in  much_data[-2:]]}))
+    test_data = much_data[-1]
+    X = test_data[0]
+    Y = test_data[1]
+    feed_dict = {x:X,y:Y}
+    print ("prediction[no_cancer , cancer]:", sess.run(op_to_restore,feed_dict=feed_dict))
 
 

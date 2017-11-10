@@ -1,6 +1,29 @@
 import  tensorflow as tf
 import numpy as np
 
+x = tf.placeholder(tf.float32)
+y = tf.placeholder(tf.float32)
+
+w = tf.Variable(tf.zeros([1, 1], dtype=tf.float32))
+b = tf.Variable(tf.ones([1, 1], dtype=tf.float32))
+y_hat = tf.add(b, tf.matmul(x, w))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def train(output_layer):
     saver = tf.train.import_meta_graph('flowers-model.meta')
 
