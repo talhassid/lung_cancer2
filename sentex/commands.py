@@ -70,7 +70,7 @@ def load_process_data(patients,labels_df,data_dir):
         try:
             img_data,label = process_data(patient,labels_df,data_dir,img_px_size=IMG_PX_SIZE, hm_slices=SLICE_COUNT)
             #print(img_data.shape,label)
-            much_data.append([img_data,label])
+            much_data.append([img_data,label,patient])
         except KeyError as e:
             print('This is unlabeled data!')
 
@@ -112,6 +112,7 @@ def convolutional_neural_network(x, keep_rate=0.8, n_classes=2):
     fc = tf.nn.relu(tf.matmul(fc, weights['W_fc'])+biases['b_fc'])
     fc = tf.nn.dropout(fc, keep_rate)
 
+
     output = tf.matmul(fc, weights['out'],name="op_to_restore")+biases['out'] #add name="op_to_restore"
 
     return output
@@ -121,7 +122,7 @@ def convolutional_neural_network(x, keep_rate=0.8, n_classes=2):
 
 def train_neural_network(epochs_count=30, validation_count=100):
 # loading data
-    much_data = np.load('muchdata-50-50-20.npy')
+    much_data = np.load('/home/talhassid/PycharmProjects/lung_cancer/sentex/stage1_muchdata-50-50-20.npy')
     train_data = much_data[:-validation_count] #2 for sampleimages and 100 for stage1
     validation_data = much_data[-validation_count:]
 # the network
@@ -162,11 +163,6 @@ def train_neural_network(epochs_count=30, validation_count=100):
         save_path = saver.save(sess, "/home/talhassid/PycharmProjects/lung_cancer/sentex/model.ckpt")
         print("Model saved in file: %s" % save_path)
 
-        test_data = much_data[-1]
-        X = test_data[0]
-        Y = test_data[1]
-        feed_dict = {x:X,y:Y}
-        print ("prediction[no_cancer , cancer]:", sess.run(output_layer,feed_dict=feed_dict))
     return x,y
 
 def test(x,y):
@@ -183,10 +179,13 @@ def test(x,y):
     # Now, let's access and create placeholders variables and
     # create feed-dict to feed new data
     much_data = np.load('muchdata-50-50-20.npy')
-    test_data = much_data[-1]
-    X = test_data[0]
-    Y = test_data[1]
-    feed_dict = {x:X,y:Y}
-    print ("prediction[no_cancer , cancer]:", sess.run(op_to_restore,feed_dict=feed_dict))
+    for index in range(much_data.shape[0]):
+        test_data = much_data[index]
+        X = test_data[0]
+        Y = test_data[1]
+        feed_dict = {x:X,y:Y}
+        prediction=tf.nn.softmax(op_to_restore)
+        print ("p_id:",much_data[index][2], "prediction[no_cancer , cancer]:", sess.run(prediction,feed_dict=feed_dict))
+        # print ("p_id:" ,much_data[index][2], "prediction[no_cancer , cancer]:",prediction.eval(session=sess,feed_dict=feed_dict))
 
 
